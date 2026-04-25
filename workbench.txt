@@ -1,0 +1,10 @@
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=14.0.0
+transformers>=4.37.0
+
+# Optional — prettier console tables
+# tabulate>=0.9.0
+
+# Optional — modern Tkinter theme
+# sv-ttk>=2.5.0
