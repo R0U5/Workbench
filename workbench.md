@@ -26,7 +26,7 @@ pip install pandas numpy pyarrow transformers tabulate
 ## Usage
 
 ```bash
-python assay.py
+python workbench.py
 ```
 
 The GUI opens with three tabs. Browse to a dataset file in any tab — the path is shared across all tabs.
