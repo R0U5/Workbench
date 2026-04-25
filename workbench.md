@@ -1,4 +1,4 @@
-# Assay
+# Workbench
 
 A Tkinter GUI for inspecting, slicing, and filtering ML training datasets. Designed to sit alongside fine-tuning tools — check your data quality, measure token distributions, and carve out clean subsets before training.
 
