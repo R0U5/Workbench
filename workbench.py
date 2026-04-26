@@ -11,21 +11,23 @@ Requires: pandas, numpy, (optional) pyarrow, (optional) tabulate, transformers
 """
 
 import os
-import sys
 import re
-import io
 import math
 import json
 import time
+import random
 import threading
 from pathlib import Path
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, List, Dict, Union, Any, TYPE_CHECKING, Callable
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 import pandas as pd
 import numpy as np
+
+if TYPE_CHECKING:
+    from transformers import AutoTokenizer
 
 # Optional deps
 try:
@@ -46,6 +48,12 @@ try:
     HAVE_TRANSFORMERS = True
 except Exception:
     HAVE_TRANSFORMERS = False
+
+try:
+    import ijson
+    HAVE_IJSON = True
+except Exception:
+    HAVE_IJSON = False
 
 
 # =========================
@@ -126,7 +134,7 @@ def load_dataframe(path: str) -> pd.DataFrame:
         return pd.read_csv(path)
     raise ValueError(f"Unsupported file type: {ext}. Use .parquet/.jsonl/.json/.csv")
 
-def safe_tabulate(data, headers="keys", tablefmt="github", showindex=False, stralign="left"):
+def safe_tabulate(data: List[Dict], headers: Union[str, List[str]] = "keys", tablefmt: str = "github", showindex: bool = False, stralign: str = "left") -> str:
     if HAVE_TABULATE:
         return tabulate(data, headers=headers, tablefmt=tablefmt, showindex=showindex, stralign=stralign)
     # minimal fallback — handles list-of-dicts only
@@ -175,7 +183,7 @@ class TextLogger:
         self.write(s + "\n")
 
 # ---------- tokenizer helpers ----------
-def try_load_tokenizer(path: str, local_only: bool = True):
+def try_load_tokenizer(path: str, local_only: bool = True) -> Tuple[AutoTokenizer, str]:
     if not HAVE_TRANSFORMERS:
         raise RuntimeError("transformers is not installed. pip install transformers")
 
@@ -218,7 +226,7 @@ def detect_columns(df: pd.DataFrame,
             return cols_lower[s], None, False
     return None, None, False
 
-def combine_text_row(row, in_col: Optional[str], out_col: Optional[str], sep: str) -> str:
+def combine_text_row(row: pd.Series, in_col: Optional[str], out_col: Optional[str], sep: str) -> str:
     if in_col and out_col:
         a = "" if pd.isna(row[in_col]) else str(row[in_col])
         b = "" if pd.isna(row[out_col]) else str(row[out_col])
@@ -235,7 +243,6 @@ def combine_text_row(row, in_col: Optional[str], out_col: Optional[str], sep: st
 
 class RandomX:
     def __init__(self, seed_int: Optional[int] = None):
-        import random
         if seed_int is None:
             seed_int = int.from_bytes(os.urandom(8), "big", signed=False)
         self.seed = seed_int
@@ -261,7 +268,7 @@ class Reservoir:
             if j <= self.k:
                 self.sample[j - 1] = item
 
-def stream_parquet(path: Path, limit: int, rng: RandomX, stop_flag_ref=None) -> pd.DataFrame:
+def stream_parquet(path: Path, limit: int, rng: RandomX, stop_flag_ref: Optional[List[bool]] = None, progress_cb: Optional[Callable[[int], None]] = None) -> pd.DataFrame:
     if not HAVE_PYARROW:
         df = pd.read_parquet(path)
         return df.sample(n=min(limit, len(df)), random_state=rng.seed).reset_index(drop=True)
@@ -275,9 +282,11 @@ def stream_parquet(path: Path, limit: int, rng: RandomX, stop_flag_ref=None) -> 
         df = table.to_pandas()
         for rec in df.to_dict(orient="records"):
             res.consider(rec)
+        if progress_cb:
+            progress_cb(res.n_seen)
     return pd.DataFrame(res.sample)
 
-def stream_jsonl(path: Path, limit: int, rng: RandomX) -> pd.DataFrame:
+def stream_jsonl(path: Path, limit: int, rng: RandomX, progress_cb: Optional[Callable[[int], None]] = None) -> pd.DataFrame:
     res = Reservoir(limit, rng)
     with path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -288,23 +297,43 @@ def stream_jsonl(path: Path, limit: int, rng: RandomX) -> pd.DataFrame:
                 obj = json.loads(line)
                 if isinstance(obj, dict):
                     res.consider(obj)
+                    if progress_cb:
+                        progress_cb(res.n_seen)
             except json.JSONDecodeError:
                 continue
     return pd.DataFrame(res.sample)
 
-def load_json_array(path: Path, limit: int, rng: RandomX) -> pd.DataFrame:
-    with path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    df = pd.DataFrame(data if isinstance(data, list) else [])
-    if len(df) <= limit:
-        return df.reset_index(drop=True)
-    return df.sample(n=limit, random_state=rng.seed).reset_index(drop=True)
+def load_json_array(path: Path, limit: int, rng: RandomX, progress_cb: Optional[Callable[[int], None]] = None) -> pd.DataFrame:
+    """Load a JSON array file, streaming elements to avoid memory issues for large files.
+    
+    Uses ijson for incremental parsing if available, otherwise falls back to loading the entire file.
+    """
+    if HAVE_IJSON:
+        res = Reservoir(limit, rng)
+        with path.open("r", encoding="utf-8") as f:
+            # Stream top-level JSON array elements
+            for item in ijson.items(f, "item"):
+                if isinstance(item, dict):
+                    res.consider(item)
+                if progress_cb:
+                    progress_cb(res.n_seen)
+        return pd.DataFrame(res.sample)
+    else:
+        # Fallback for when ijson is not available
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        df = pd.DataFrame(data if isinstance(data, list) else [])
+        if len(df) <= limit:
+            return df.reset_index(drop=True)
+        return df.sample(n=limit, random_state=rng.seed).reset_index(drop=True)
 
-def stream_csv(path: Path, limit: int, rng: RandomX, chunksize: int = 100_000) -> pd.DataFrame:
+def stream_csv(path: Path, limit: int, rng: RandomX, chunksize: int = 100_000, progress_cb: Optional[Callable[[int], None]] = None) -> pd.DataFrame:
     res = Reservoir(limit, rng)
     for chunk in pd.read_csv(path, chunksize=chunksize):
         for rec in chunk.to_dict(orient="records"):
             res.consider(rec)
+        if progress_cb:
+            progress_cb(res.n_seen)
     return pd.DataFrame(res.sample)
 
 def infer_slice_out(in_path: Path, out_dir: Optional[Path], slice_size: int) -> Path:
@@ -443,15 +472,23 @@ class SliceTab(ttk.Frame):
                 rng = RandomX()
                 self.logger.println(f"[Slice] RNG seed: {rng.seed}")
                 ext = in_path.suffix.lower()
+                
+                # Progress callback for streaming functions
+                def progress_cb(n_seen: int) -> None:
+                    if n_seen % 1000 == 0:
+                        self.logger.println(f"[Slice] Processed {n_seen:,} rows...")
+                
                 if ext == ".parquet":
-                    df = stream_parquet(in_path, k, rng, stop_flag_ref=self._stop_flag)
+                    df = stream_parquet(in_path, k, rng, stop_flag_ref=self._stop_flag, progress_cb=progress_cb)
                 elif ext == ".jsonl":
-                    df = stream_jsonl(in_path, k, rng)
+                    df = stream_jsonl(in_path, k, rng, progress_cb=progress_cb)
                 elif ext == ".json":
+                    if not HAVE_IJSON:
+                        self.logger.println("[Slice] Warning: ijson not installed; loading entire JSON file into memory. Install ijson for large file support.")
                     self.logger.println("[Slice] Warning: .json arrays load fully; prefer JSONL/Parquet for huge files.")
-                    df = load_json_array(in_path, k, rng)
+                    df = load_json_array(in_path, k, rng, progress_cb=progress_cb)
                 elif ext == ".csv":
-                    df = stream_csv(in_path, k, rng)
+                    df = stream_csv(in_path, k, rng, progress_cb=progress_cb)
                 else:
                     raise ValueError(f"Unsupported input type: {ext}")
 
@@ -484,7 +521,7 @@ class SliceTab(ttk.Frame):
 # Filter tab
 # =========================
 
-def batched_token_lengths(texts: List[str], tokenizer, batch_size: int, progress_cb=None) -> List[int]:
+def batched_token_lengths(texts: List[str], tokenizer: Any, batch_size: int, progress_cb: Optional[Callable[[int, int], None]] = None) -> List[int]:
     lengths = []
     total = len(texts)
     for i in range(0, total, batch_size):
