@@ -1179,41 +1179,113 @@ class Workbench(tk.Tk):
             pass
 
     def _apply_theme(self):
-        """Try Sun Valley (sv-ttk) if present; otherwise configure 'clam' with nicer spacing."""
+        """Apply a modern theme: Sun Valley (sv-ttk) if available, otherwise enhance 'clam' with aggressive modern styling."""
+        # Try Sun Valley theme (sv-ttk) first - it's designed for modern look
         try:
             import sv_ttk  # type: ignore
             sv_ttk.set_theme("light")
-            self.option_add("*Font", ("Segoe UI", 10))
+            self.option_add("*Font", ("Segoe UI", 11))
             style = ttk.Style(self)
-            style.configure("TNotebook.Tab", padding=(16, 10))
-            style.configure("TLabelframe", padding=10)
-            style.configure("TFrame", padding=6)
-            style.configure("Primary.TButton", padding=(14, 8))
+            # Modern tab styling
+            style.configure("TNotebook.Tab", padding=(20, 12), font=("Segoe UI", 10, "bold"))
+            style.configure("TLabelframe", padding=12, relief="flat", borderwidth=0)
+            style.configure("TFrame", padding=8)
+            style.configure("Primary.TButton", padding=(16, 10), font=("Segoe UI", 10))
+            style.configure("TButton", padding=(12, 8), font=("Segoe UI", 10))
+            style.configure("TLabel", font=("Segoe UI", 10))
+            style.configure("TEntry", padding=(8, 6), font=("Segoe UI", 10))
+            style.configure("TCombobox", padding=(8, 6), font=("Segoe UI", 10))
             return
         except Exception:
             pass
 
+        # Fallback: Enhanced 'clam' theme with modern touches
         style = ttk.Style(self)
         try:
             style.theme_use("clam")
         except Exception:
-            pass
+            pass  # Use default theme if clam not available
 
-        # Global font
-        self.option_add("*Font", ("Segoe UI", 10))
-
-        # Spacing & simple accent for primary actions
-        style.configure("TNotebook.Tab", padding=(16, 10))
-        style.configure("TLabelframe", padding=10)
-        style.configure("TFrame", padding=6)
-        style.configure("Primary.TButton", padding=(14, 8))
-
-        # On 'clam', background/foreground tweaks (kept subtle to avoid platform issues)
-        style.map(
-            "Primary.TButton",
-            background=[("!disabled", "#2563EB"), ("active", "#1D4ED8")],
-            foreground=[("!disabled", "white")],
-        )
+        # Global modern font
+        self.option_add("*Font", ("Segoe UI", 11))
+        
+        # Modern color palette
+        BG_COLOR = "#F5F5F5"      # Light gray background
+        FG_COLOR = "#333333"      # Dark gray text
+        ACCENT_COLOR = "#0078D7"  # Blue accent (Windows 10/11 style)
+        HOVER_COLOR = "#E5F5FF"   # Light blue hover
+        
+        # Notebook tabs - modern spacing and appearance
+        style.configure("TNotebook", background=BG_COLOR, borderwidth=0)
+        style.configure("TNotebook.Tab", 
+                      padding=(20, 12), 
+                      font=("Segoe UI", 10, "bold"),
+                      background=BG_COLOR,
+                      foreground=FG_COLOR,
+                      borderwidth=0,
+                      relief="flat")
+        style.map("TNotebook.Tab",
+               background=[("selected", ACCENT_COLOR), ("active", HOVER_COLOR)],
+               foreground=[("selected", "white"), ("active", FG_COLOR)])
+        
+        # Labelframes - clean, modern look
+        style.configure("TLabelframe", 
+                      padding=12, 
+                      relief="flat", 
+                      borderwidth=0,
+                      background=BG_COLOR,
+                      font=("Segoe UI", 10, "bold"))
+        style.configure("TLabelframe.Label", 
+                      font=("Segoe UI", 10, "bold"),
+                      foreground=ACCENT_COLOR)
+        
+        # Frames with modern padding
+        style.configure("TFrame", padding=8, background=BG_COLOR)
+        
+        # Buttons - modern, rounded feel
+        style.configure("Primary.TButton", 
+                      padding=(16, 10), 
+                      font=("Segoe UI", 10),
+                      background=ACCENT_COLOR,
+                      foreground="white",
+                      borderwidth=0,
+                      relief="flat")
+        style.map("Primary.TButton",
+               background=[("active", "#106EBE"), ("pressed", "#005A9E")],
+               relief=[("pressed", "sunken"), ("!pressed", "flat")])
+        
+        # Regular buttons
+        style.configure("TButton", 
+                      padding=(12, 8), 
+                      font=("Segoe UI", 10),
+                      background="#E1E1E1",
+                      foreground=FG_COLOR,
+                      borderwidth=1,
+                      relief="flat")
+        style.map("TButton",
+               background=[("active", HOVER_COLOR), ("pressed", "#CCCCCC")],
+               relief=[("pressed", "sunken"), ("!pressed", "flat")])
+        
+        # Labels
+        style.configure("TLabel", 
+                      font=("Segoe UI", 10), 
+                      background=BG_COLOR,
+                      foreground=FG_COLOR)
+        
+        # Entries and comboboxes
+        style.configure("TEntry", 
+                      padding=(8, 6), 
+                      font=("Segoe UI", 10),
+                      fieldbackground="white",
+                      borderwidth=1,
+                      relief="solid")
+        style.configure("TCombobox", 
+                      padding=(8, 6), 
+                      font=("Segoe UI", 10),
+                      fieldbackground="white")
+        
+        # Configure root window background
+        self.configure(bg=BG_COLOR)
 
 def main():
     app = Workbench()

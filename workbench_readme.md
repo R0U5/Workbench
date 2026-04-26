@@ -17,10 +17,10 @@ All tabs share a single input file path and auto-populate output directories. Se
 - `pyarrow` (recommended — enables streaming Parquet processing)
 - `transformers` (required for tokenizer-based features)
 - `tabulate` (optional — prettier console tables)
-- `sv-ttk` (optional — Sun Valley theme for a modern look)
+- `sv-ttk` (recommended — Sun Valley theme for a modern look)
 
 ```bash
-pip install pandas numpy pyarrow transformers tabulate
+pip install pandas numpy pyarrow transformers tabulate sv-ttk
 ```
 
 ## Usage
